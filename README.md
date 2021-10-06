@@ -1,10 +1,11 @@
 # Chapter 9: Dimensionality Reduction
 
 ## Overview, technical details, and some applications
+## http://www.datascience-in-tourism.com/
 
 ***Nikolay Oskolkov***
 
-* Nikolay Oskolkov - Lund University and National Bioinformatics Infrastructure Sweden (NBIS)
+* Lund University and National Bioinformatics Infrastructure Sweden (NBIS)
 
 ### Abstract
 
