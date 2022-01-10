@@ -1,0 +1,98 @@
+---
+title: "Dimensionality Reduction"
+author: "Nikolay Oskolkov"
+date: "1/11/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir="/home/nikolay/Documents/Book_Roman_Egger/Data/output_2019-09-30_13-41-16/output_2019-09-30_13-41-16/")
+```
+
+In this section we will demonstrate step-by-step how to apply different dimensionality reduction techniques to a text data set. The data set was collected by scraping > 100 000 Instagram images about Austria posted by tourists. The images were annotated using Google Cloud Vision to summarize tourists' impressions about Austria, and Doc2Vec model was used to convert the text annotations to numeric representation by building 100 numeric vectors that can be served as new features / attributes instead of the raw text. Here we are going to use the 100 numeric vectors for the > 100 000 Instagram images in order to visualize the data with different dimensionality reduction techniques. For this purpose, we will use R language for statistical programming. 
+
+First, we are going to load the tab-delimited data set ("read.delim" function in R), and in order to sped up computations we will randomly select 10 000 images / annotations instead of using the full data set ("sample" function extracts 10 000 rows). 
+
+```{r load image dataset}
+data<-read.delim("Vectors.tsv",header=FALSE,sep="\t")
+data<-data[sample(nrow(data),10000),]
+data[1:5,1:5]
+dim(data)
+```
+
+Here the "dim"-function displays dimensions of the data set. We can se that we have a matrix with 10 000 rows, which are the samples / images / annotations, and 100 columns, which are the features / attributes.
+
+We will start with making a PCA plot. For this purpose, we are going to use the "prcomp" function in R that takes the data as an input. It is generally recommended to perform logarithm transformation of the data before inputing it to prcomp in order to make the data more normally distributed. Another important thing to do is center the data, this is performed by default in prcomp, again this step is to ensure that the data looks as normally distributed as possible. Since the data by its preparation contains negative values a logarithm function can not be applied, therefore we add an offset to all values of the data matrix which is the absolute value of the minimal negative value of the matrix. The offset does not change patterns present in the data since PCA is invariant to affine transformations such as shift by a certain offset value.
+
+```{r PCA}
+PC<-prcomp(log10(data + abs(min(data)) + 1))
+```
+
+For exploratory analysis of the data it is informative to check the fraction of variation explained by each principal component. This allows for immediate assessment of how much signal there is in the data. The information about variance explained is contained in the "sdev" variable of the "PC" object that contains the results from "prcomp". The fraction of the variace explained y each principal components can be computed as by dividing squared "sdev" for each principal component by the total sum of the squared "sdev" from all components. Here we will use "barplot" function in R to visualize the variance explained by the 20 leading principal components.
+
+```{r expl var plot,fig.width=10,fig.height=8}
+vars<- PC$sdev^2
+vars<- vars/sum(vars)
+barplot(vars[1:20],names.arg=1:20,xlab="PCs",ylab="FRACTION OF VARIANCE EXPLAINED",main="PERCENT OF VARIANCE EXPLAINED BY PCs")
+mtext(paste0("The 20 PCs explain ",round(sum(vars[1:20])*100,0),"% of variation in the data"))
+```
+
+Here we can observe that first two principal components are responsible for a much higher fraction of variation in the data compared to the rest components. This is a good sign as it demonstrates that there is some correlation in the data. Finally we will display the PCA plot using only first two leading principal components.
+
+```{r PCA plot,fig.width=10,fig.height=8}
+plot(PC$x[,1:2],main="IMAGE DATA SET: PCA PLOT",xlab="PC1",ylab="PC2",col="black",cex=0.8,pch=19)
+```
+
+We can observe two distinct clusters of points meaning that the data has some structure, the interpretation of the clusters is unclear though. Another unfortunate case could have been when the data points form a big blob in the center of the figure, this implies that all directions are nearly equivalent and there is no much potential for dimensionality reduction here, but fortunately this is not the case for our data set.
+
+For comparison, let us compute MDS and demonstrate that PCA and MDS produce virtually identical outputs. For this purpose, we will use the "cmdscale" function in base R. This function accepts a matrix of pairwise distances between data points as input. Such matrix can be computed using the "dist" R function. Be prepared that the "dist" function will require a lot of RAM, so MDS is a really memory hungry method, and is problematic to compute for large data set with hundreds of thousands of data points. In addition, the numeric optimization of MDS cost function is a very time consuming process, so be patient and if you want your dimensionality reduction plot faster, perhaps you should switch to PCA. Below, we will run MDS and discuss the data structure produced by this dimensionality reduction technique.  
+
+```{r MDS plot,fig.width=10,fig.height=8}
+d <- dist(log10(data + abs(min(data)) + 1))
+mds <- cmdscale(d, k = 2)
+plot(mds[,1:2],main="IMAGE DATA SET: MDS PLOT",xlab="MDS1",ylab="MDS2",col="black",cex=0.8,pch=19)
+```
+
+
+Now we are going to compare the PCA figure with tSNE plot on the annotated instagram image data set. For running tSNE in R we will use the "Rtsne" library which implements the Barnes-Hut version of the algorithm. This version optimizes time and memory consumption via ignoring distant neighbours and computing pairwise distances between only nearest neighbours. The "Rtsne" function takes a few important hyperparameters of the algorithm such as perplexity, initial number of PCA dimensions to feed into tSNE, the maximum number of tSNE iterations, and initialization coordinates for the data points in low-dimensional space. 
+
+Generally, there are no strict rule how to optimize hyperparameters of tSNE. In adition, since dimensionality reduction is an unsupervised problem, one can not apply cross-validation which is a golden standard way of hyperparameter tuning for supervised machine learning. However, there are a few rules of thumb that can be used to at leat guess initial values for hyperparameters in order to further tweak them for a better tSNE picture.
+
+Since perplexity has a meaning of the number of k-nearest neighbors (KNN) for each data point, one can use a rule of thumb from KNN classification machine learning. According to this rule of thumb, an optimal k for a KNN classifier can be approximately guessed as a square root of the number of data points. This rule of thumb has deep roots in mathematics of Brownian diffusion, i.e. random walk on a lattice, when a travelling agent deviates by square root of number of steps. For our problem with 10 000 data points, we therefore will select optimal perplexity to be 100.
+
+tSNE has troubles working with truly high-dimensional data and needs the data to be preprocessed in a way that reduces the number of noisy features / attributes. One can for example use PCA as a denoising step prior to tSNE. Typically, one represents a raw data as a number of leading principal components getting thus rid of the "long tail" in the plot of the fraction of explained variance by each principal component. The "long tail" is assumed to contain redundant and therefore less important variables that can be omitted without loosing much information. Elbow method can serve as a rule for determining the optimal number of principal components to keep for feeding into tSNE. Another possible aproach is a randomization / shuffling of the original data matrix with the following construction of the explained by chance variance y each principal component. This allows for inferring the noise level in the data and therefore the optimal number of principal components to keep for further downstream analysis is the numebr of principal components that explain variance above the "by chance" explained variance level. For our example we slect for simplicity top 20 principal components to be input into tSNE since we previously checked that they together explain 71% of variation and the profile seems to saturate at around 20 principal components explaining (Elbow method).
+
+The maximal number of iterations is typically specified between 300 and 1000. However, this parameter depends on the number of data points and should be increased for large data sets, otherwise the gradient descent optimization will not have time to converge. A way to see that the gradient descent has converged is to look at the x- and y-axes of the tSNE plot. The range of values on the axes should be approximately 50-100. If it is for example 10, this is an indication that tSNE has not converged.
+
+Finally, although random initialization seems to have been an essential part of tSNE algorithm in the beginning, recent developments improved this option and nowadays a popular way to initialize the low-dimensional embeddings is via PCA. PCA-initialization of low-dimensional tSNE embeddings might be important for better preserving global structure. 
+
+Let us now specify the three tSNE hyperparameters, run tSNE and plot a 2D representation of the annotated image data set.
+
+```{r tSNE plot,fig.width=10,fig.height=8}
+library("Rtsne")
+set.seed(12)
+optPerp <- round(sqrt(dim(data)[1]),0)
+tsne.out<-Rtsne(log10(data + abs(min(data)) + 1), initial_dims = 20, verbose = TRUE, perplexity = optPerp, max_iter = 1000, Y_init = PC$x[,1:2])
+plot(tsne.out$Y, main = "IMAGE DATASET: tSNE PLOT", xlab = "tSNE1", ylab = "tSNE2", cex = 0.8, pch = 19)
+```
+
+In the code above, we first define an optimal perplexity as a square root of the number of data points. Then we run the "Rtsne" function specifying the optimal perplexity, number of principal components (initial_dims = 20), maximal number of iterations (max_iter = 1000) and tSNE initialization via PCA (Y_init = PC$x[,1:2]), where we use the previously computed top 2 principal components. Finally we plot using the "plot" function the 2D embeddings constructed by tSNE.
+
+Looking at the tSNE figure we can again observe 2 large clusters similar to the PCA plot. However, at least 4 more smaller clusters become visible on the tSNE plot that were not previosly obvious from the PCA plot. This demonstrates that tSNE can resolve a finer heterogeneity in the data that was not possible to achieve with PCA.
+
+It is important to mention that distances between the tSNE clusters and their mutual positions are not necessarily meaningful. I.e. tSNE can identify the presence of the clusters (local structure) but does not provide information about relationship between the clusters (global stricture). This is because by its design tSNE ensures preservation of short distances between the points within clusters but can not preserve long distances between the points in different clusters.
+
+
+Now we will compare tSNE clusters with the clusters produced by UMAP and discuss hyperparameters of UMAP. For computing UMAP we will use "uwot" R library developed by James Melville. Here, "n_neighbors" hyperparameter is nearly equivalent to the perplexity in tSNE, so we can gain specify it as a square root of the number of data points the way we did it for tSNE. In contrast, "min_dist" is a UMAP specific hyperparameter that has no analogy in the tSNE algorithm. In layman terms one can explain the hyperparameter as a measure of density of the clusters. Low "min_dist" values essentially mean that UMAP assigns almost identical coordinates for the data points that are close to each other in the low-dimensional space. This efficiently leads to more densely packed (low "min_dist") or less densely packed (high "min_dist") clusters displayed by UMAP. Here we will use "min_dist = 0.3" that gives a moderately densly packed clusters, decreasing this values down to 0.1-0.01 will produce very tightly packed blobs that might be advantageos to have for running clustering algorithms on the top. 
+
+As for tSNE we will replace the original data with top 20 principal components as a denoising step which is regulated by the "pca" hyperparameter. Another interesting advantage of UMAP is that it is more robust to different types of data such as binary, categorical and continuous. While one has to pre-compute matrix of pairwise distances between data points for tSNE in order to use it with e.g. binary data, this can be done automatically by UMAP if one just specifies an appropriate "metric" hyperparameter. For our case we will use "metric = eiclidean", but Hamming, Dice and other metrics are available which makes UMAP more flexible and generalizable for different types of data. finally, "uwot" library offers multi-threading option, something which tSNE still lacks, we will use "n_threads = 4". Let us run UMAP and discuss the output plot.
+
+```{r UMAP plot,fig.width=10,fig.height=8}
+library("uwot")
+set.seed(123)
+umap.out <- umap(log10(data + abs(min(data)) + 1), n_neighbors = optPerp, pca = 20, min_dist = 0.3, metric = "euclidean", init = "pca", verbose = TRUE, n_threads = 4)
+plot(umap.out, main = "IMAGE DATA SET: UMAP PLOT", xlab = "UMAP1", ylab = "UMAP2", cex = 0.8, pch = 19)
+```
+
+As it was the case for tSNE, we again see two large clusters and a few smaller clusters. We can immediately notice that the clusters look denser than for tSNE, this however can be regulated by the "min_dist" hyperparameter. The inter-cluster distances also seem to be larger than for tSNE. This feature can be useful if one aims at running clustering algorithms on reduced UMAP dimensions. In this case, such clustering algorithms as k-means, HDBSCAN or Louvain can do a good job because the clusters are very distinct and easily separable from each other. On the other hand, it is typically not recommended to cluster on 2D tSNE or UMAP representation because if the intrinsic dimensionality of the data is not 2, one can at best loose iteresting data patterns or get biased clustering at worst. In contrast to tSNE that delivers only 2-3 low-dimensional components due to computational limitations of the algorithm, UMAP can provide a number of components. Clustering on a number of UMAP components can be more promising than the clustering on the raw dat that might suffer from the Curse of Dimensionality and be sensitive to the choice of the distance metric.
